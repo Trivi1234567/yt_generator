@@ -1,0 +1,52 @@
+name: Test Video Creation
+
+on:
+  workflow_dispatch:
+    inputs:
+      mp3_ids:
+        description: "Comma-separated list of Mureka File ID"
+        required: true
+      image_id:
+        description: "Google Drive Image ID"
+        required: true
+
+jobs:
+  build-video:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg curl
+
+      - name: Download Inputs
+        run: |
+          mkdir inputs
+          IFS=',' read -ra IDS <<< "${{ github.event.inputs.mp3_ids }}"
+          i=1
+          for id in "${IDS[@]}"; do
+            curl -L "$id" -o "inputs/audio_$i.mp3" && echo "✅ audio_$i.mp3 downloaded successfully"
+            ((i++))
+          done
+
+          curl -L "https://drive.google.com/uc?export=download&id=${{ github.event.inputs.image_id }}" -o inputs/image.jpg && echo "✅ image.jpg downloaded successfully"
+
+          ls -lh inputs/
+
+      - name: Merge MP3s
+        run: |
+          for f in inputs/audio_*.mp3; do echo "file '$f'" >> list.txt; done
+          ffmpeg -f concat -safe 0 -i list.txt -c copy merged.mp3
+
+      - name: Create Video
+        run: |
+          ffmpeg -loop 1 -i inputs/image.jpg -i merged.mp3 -c:v libx264 -tune stillimage \
+            -c:a aac -b:a 192k -pix_fmt yuv420p -shortest output.mp4
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-video
+          path: output.mp4
